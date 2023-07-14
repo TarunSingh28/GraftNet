@@ -2,6 +2,7 @@ import torch
 import numpy as np
 from torch.autograd import Variable
 import torch.nn as nn
+import torch.nn.functional as F
 from util import use_cuda, sparse_bmm, read_padded
 
 VERY_SMALL_NUMBER = 1e-10
@@ -26,6 +27,10 @@ class GraftNet(nn.Module):
         self.has_relation_kge = False
         self.use_kb = use_kb
         self.use_doc = use_doc
+
+        # print("---NUM EMB---")
+        # print(num_entity)
+        # print("-------")
 
         # initialize entity embedding
         self.entity_embedding = nn.Embedding(num_embeddings=num_entity + 1, embedding_dim=word_dim, padding_idx=num_entity)
@@ -97,8 +102,9 @@ class GraftNet(nn.Module):
         self.kld_loss = nn.KLDivLoss()
         self.bce_loss = nn.BCELoss()
         self.bce_loss_logits = nn.BCEWithLogitsLoss()
+        self.MSEloss = nn.MSELoss()
 
-    def forward(self, batch):
+    def forward(self, batch, doc_score_original):
         """
         :local_entity: global_id of each entity                     (batch_size, max_local_entity)
         :q2e_adj_mat: adjacency matrices (dense)                    (batch_size, max_local_entity, 1)
@@ -108,16 +114,25 @@ class GraftNet(nn.Module):
         :document_text:                                             (batch_size, max_relevant_doc, max_document_word)
         :entity_pos: sparse entity_pos_mat                          (batch_size, max_local_entity, max_relevant_doc * max_document_word) 
         :answer_dist: an distribution over local_entity             (batch_size, max_local_entity)
+        :doc_score_original: the ground truth doc scores
         """
         local_entity, q2e_adj_mat, kb_adj_mat, kb_fact_rel, query_text, document_text, entity_pos, answer_dist = batch
+
+        # print(kb_adj_mat.shape)
 
         batch_size, max_local_entity = local_entity.shape
         _, max_relevant_doc, max_document_word = document_text.shape
         _, max_fact = kb_fact_rel.shape
 
+        # print(document_text[0].shape)
+        # print(document_text)
+
         # numpy to tensor
         local_entity = use_cuda(Variable(torch.from_numpy(local_entity).type('torch.LongTensor'), requires_grad=False))
+        # print('====================')
+        # print(local_entity)
         local_entity_mask = use_cuda((local_entity != self.num_entity).type('torch.FloatTensor'))
+        # print(local_entity_mask)
         if self.use_kb:
             kb_fact_rel = use_cuda(Variable(torch.from_numpy(kb_fact_rel).type('torch.LongTensor'), requires_grad=False))
         query_text = use_cuda(Variable(torch.from_numpy(query_text).type('torch.LongTensor'), requires_grad=False))
@@ -143,6 +158,7 @@ class GraftNet(nn.Module):
         if self.use_kb:
             # build kb_adj_matrix from sparse matrix
             (e2f_batch, e2f_f, e2f_e, e2f_val), (f2e_batch, f2e_e, f2e_f, f2e_val) = kb_adj_mat
+            # print([e2f_batch, e2f_f, e2f_e])
             entity2fact_index = torch.LongTensor([e2f_batch, e2f_f, e2f_e])
             entity2fact_val = torch.FloatTensor(e2f_val)
             entity2fact_mat = use_cuda(torch.sparse.FloatTensor(entity2fact_index, entity2fact_val, torch.Size([batch_size, max_fact, max_local_entity]))) # batch_size, max_fact, max_local_entity
@@ -193,11 +209,18 @@ class GraftNet(nn.Module):
             document_node_emb = (document_node_emb[0, :, :] + document_node_emb[1, :, :]).view(batch_size, max_relevant_doc, self.entity_dim) # batch_size, max_relevant_doc, entity_dim
 
         # load entity embedding
+
+        # print("---LOCAL ENTITY---")
+        # print(local_entity)
+        # print("------")
+
         local_entity_emb = self.entity_embedding(local_entity) # batch_size, max_local_entity, word_dim
         if self.has_entity_kge:
             local_entity_emb = torch.cat((local_entity_emb, self.entity_kge(local_entity)), dim=2) # batch_size, max_local_entity, word_dim + kge_dim
         if self.word_dim != self.entity_dim:
             local_entity_emb = self.entity_linear(local_entity_emb) # batch_size, max_local_entity, entity_dim
+        
+        # torch.save(local_entity_emb, 'initial_embs.pt')
 
         # label propagation on entities
         for i in range(self.num_layer):
@@ -273,16 +296,88 @@ class GraftNet(nn.Module):
             # update entity
             local_entity_emb = self.relu(e2e_linear(self.linear_drop(next_local_entity_emb))) # batch_size, max_local_entity, entity_dim
 
+        # torch.save(local_entity_emb, 'final_embs.pt')
+        # print(local_entity_emb)
+
+        # torch.save(document_textual_emb, 'final_embs_docs.pt')
+        # torch.save(document_node_emb, 'final_embs_docs_nodes.pt')
+        # print(local_entity_emb)
 
         # calculate loss and make prediction
+
+        # print('---------------')
+        # print(len(query_node_emb[0][0]))
+        # print(len(document_node_emb[0][0]))
+        # print('-----------------')
+
+        
+
         score = self.score_func(self.linear_drop(local_entity_emb)).squeeze(dim=2) # batch_size, max_local_entity
-        loss = self.bce_loss_logits(score, answer_dist)
 
-        score = score + (1 - local_entity_mask) * VERY_NEG_NUMBER
-        pred_dist = self.sigmoid(score) * local_entity_mask
-        pred = torch.max(score, dim=1)[1]
+        # doc_score = self.score_func(self.linear_drop(document_node_emb)).squeeze(dim=2)
 
-        return loss, pred, pred_dist
+        # print(score.shape)
+        # print(query_node_emb.shape)
+        # print(query_node_emb[0][0])
+        # print(document_node_emb[0])
+        # print(document_textual_emb.shape)
+
+        qne_normalized = F.normalize(query_node_emb.float(), p=2, dim=2)
+        dne_normalized = F.normalize(document_node_emb.float(), p=2, dim=2)
+        # print(qne_normalized.shape, document_node_emb.shape)
+        score2 = F.cosine_similarity(qne_normalized, dne_normalized, dim=2)
+        # print(score2.shape)
+
+
+        # print(doc_score)
+
+        doc_score_original_np = np.zeros([len(doc_score_original),len(max(doc_score_original,key = lambda x: len(x)))], dtype='float32')
+        for i,j in enumerate(doc_score_original):
+            doc_score_original_np[i][0:len(j)] = j
+        
+        doc_score_original = use_cuda(Variable(torch.from_numpy(doc_score_original_np).type('torch.FloatTensor'), requires_grad=False))
+        doc_score_original = F.pad(doc_score_original, (0, (score2.shape[1]-doc_score_original.shape[1])))
+
+        doc_score_original = F.normalize(doc_score_original.float(), p=2, dim=-1)
+        # print(doc_score_original.shape)
+        
+        # doc_score = doc_score.detach().cpu().numpy()
+        # doc_indexes_score_wise = rel_document_ids
+        # doc_index_score = sorted(set(zip(doc_indexes_score_wise[0], doc_score[0])), key=lambda x:x[1], reverse=True)
+        # doc_id_sorted = [x for x,_ in doc_index_score]
+
+        # print(doc_score)
+        # print(doc_score_original)
+        # print(type(doc_score), type(doc_score_original))
+        # print(doc_score.size(), doc_score_original.size())
+
+        # print(doc_ranking_original)
+        # print(doc_id_sorted)
+
+        # loss = self.bce_loss_logits(score, answer_dist)
+        loss = self.MSEloss(score2, doc_score_original)
+        # print(loss)
+
+        # score = score + (1 - local_entity_mask) * VERY_NEG_NUMBER
+
+        # pred_dist = self.sigmoid(score) * local_entity_mask
+        # pred = torch.max(score, dim=1)[1]
+
+        pred_dist = self.sigmoid(score2)
+        
+        # pred = torch.max(score2, dim=1)
+        _, pred = torch.topk(score2, k=20, dim=1)
+        
+
+        # print('------->>')
+        # print(score2, doc_score_original)
+        # print(pred_dist)
+        # print(pred)
+        # print(score2)
+        # print('-------------------->')
+
+        # return loss, pred, pred_dist, doc_score_original
+        return loss, pred, score2, doc_score_original
 
 
     def init_hidden(self, num_layer, batch_size, hidden_size):

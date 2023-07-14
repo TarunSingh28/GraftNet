@@ -133,10 +133,10 @@ class DataLoader():
                 self.rel_document_ids[next_id, pid] = passage['document_id']
 
             # construct distribution for answers
-            for answer in sample['answers']:
-                keyword = 'text' if type(answer['kb_id']) == int else 'kb_id'
-                if self.entity2id[answer[keyword]] in g2l:
-                    self.answer_dists[next_id, g2l[self.entity2id[answer[keyword]]]] = 1.0
+            # for answer in sample['answers']:
+            #     keyword = 'text' if type(answer['document_id']) == int else 'document_id'
+            #     if self.entity2id[answer[keyword]] in g2l:
+            #         self.answer_dists[next_id, g2l[self.entity2id[answer[keyword]]]] = 1.0
 
             self.kb_adj_mats[next_id] = (np.array(entity2fact_f, dtype=int), np.array(entity2fact_e, dtype=int), np.array([1.0] * len(entity2fact_f))), (np.array(fact2entity_e, dtype=int), np.array(fact2entity_f, dtype=int), np.array([1.0] * len(fact2entity_e)))
             self.entity_poses[next_id] = (entity_pos_local_entity_id, entity_pos_word_id, entity_pos_word_weights)
@@ -157,6 +157,7 @@ class DataLoader():
         vals1 = np.array([], dtype=float)
 
         for i, sample_id in enumerate(sample_ids):
+            # print(i)
             (mat0_0, mat0_1, val0), (mat1_0, mat1_1, val1) = self.kb_adj_mats[sample_id]
             assert len(val0) == len(val1)
             num_fact = len(val0)
@@ -194,14 +195,15 @@ class DataLoader():
         """
         sample_ids = self.batches[batch_size * iteration: batch_size * (iteration + 1)]
         
-        return self.local_entities[sample_ids], \
+        return (self.local_entities[sample_ids], \
                self.q2e_adj_mats[sample_ids], \
                (self._build_kb_adj_mat(sample_ids, fact_dropout=fact_dropout)), \
                self.kb_fact_rels[sample_ids], \
                self.query_texts[sample_ids], \
                self._build_document_text(sample_ids), \
                (self._build_entity_pos(sample_ids)), \
-               self.answer_dists[sample_ids]
+               self.answer_dists[sample_ids]), \
+               sample_ids
 
 
     def _build_document_text(self, sample_ids):
