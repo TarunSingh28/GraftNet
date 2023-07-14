@@ -124,12 +124,15 @@ class GraftNet(nn.Module):
         _, max_relevant_doc, max_document_word = document_text.shape
         _, max_fact = kb_fact_rel.shape
 
-        print(document_text[0].shape)
+        # print(document_text[0].shape)
         # print(document_text)
 
         # numpy to tensor
         local_entity = use_cuda(Variable(torch.from_numpy(local_entity).type('torch.LongTensor'), requires_grad=False))
+        # print('====================')
+        # print(local_entity)
         local_entity_mask = use_cuda((local_entity != self.num_entity).type('torch.FloatTensor'))
+        # print(local_entity_mask)
         if self.use_kb:
             kb_fact_rel = use_cuda(Variable(torch.from_numpy(kb_fact_rel).type('torch.LongTensor'), requires_grad=False))
         query_text = use_cuda(Variable(torch.from_numpy(query_text).type('torch.LongTensor'), requires_grad=False))
@@ -155,7 +158,7 @@ class GraftNet(nn.Module):
         if self.use_kb:
             # build kb_adj_matrix from sparse matrix
             (e2f_batch, e2f_f, e2f_e, e2f_val), (f2e_batch, f2e_e, f2e_f, f2e_val) = kb_adj_mat
-            print([e2f_batch, e2f_f, e2f_e])
+            # print([e2f_batch, e2f_f, e2f_e])
             entity2fact_index = torch.LongTensor([e2f_batch, e2f_f, e2f_e])
             entity2fact_val = torch.FloatTensor(e2f_val)
             entity2fact_mat = use_cuda(torch.sparse.FloatTensor(entity2fact_index, entity2fact_val, torch.Size([batch_size, max_fact, max_local_entity]))) # batch_size, max_fact, max_local_entity
@@ -311,7 +314,7 @@ class GraftNet(nn.Module):
 
         score = self.score_func(self.linear_drop(local_entity_emb)).squeeze(dim=2) # batch_size, max_local_entity
 
-        doc_score = self.score_func(self.linear_drop(document_node_emb)).squeeze(dim=2)
+        # doc_score = self.score_func(self.linear_drop(document_node_emb)).squeeze(dim=2)
 
         # print(score.shape)
         # print(query_node_emb.shape)
@@ -324,6 +327,7 @@ class GraftNet(nn.Module):
         # print(qne_normalized.shape, document_node_emb.shape)
         score2 = F.cosine_similarity(qne_normalized, dne_normalized, dim=2)
         # print(score2.shape)
+
 
         # print(doc_score)
 
@@ -354,12 +358,26 @@ class GraftNet(nn.Module):
         loss = self.MSEloss(score2, doc_score_original)
         # print(loss)
 
-        score = score + (1 - local_entity_mask) * VERY_NEG_NUMBER
+        # score = score + (1 - local_entity_mask) * VERY_NEG_NUMBER
 
-        pred_dist = self.sigmoid(score) * local_entity_mask
-        pred = torch.max(score, dim=1)[1]
+        # pred_dist = self.sigmoid(score) * local_entity_mask
+        # pred = torch.max(score, dim=1)[1]
 
-        return loss, pred, pred_dist
+        pred_dist = self.sigmoid(score2)
+        
+        # pred = torch.max(score2, dim=1)
+        _, pred = torch.topk(score2, k=20, dim=1)
+        
+
+        # print('------->>')
+        # print(score2, doc_score_original)
+        # print(pred_dist)
+        # print(pred)
+        # print(score2)
+        # print('-------------------->')
+
+        # return loss, pred, pred_dist, doc_score_original
+        return loss, pred, score2, doc_score_original
 
 
     def init_hidden(self, num_layer, batch_size, hidden_size):

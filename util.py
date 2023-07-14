@@ -108,20 +108,38 @@ def cal_accuracy(pred, answer_dist):
 	"""
 	num_correct = 0.0
 	num_answerable = 0.0
-	for i, l in enumerate(pred):
-		num_correct += (answer_dist[i, l] != 0)
-	for dist in answer_dist:
-		if np.sum(dist) != 0:
-			num_answerable += 1
-	return num_correct / len(pred), num_answerable / len(pred)
 
-def output_pred_dist(pred_dist, answer_dist, id2entity, start_id, data_loader, f_pred):
+	MRR = 0.0
+	for i in range(len(answer_dist)):
+		rel_index = []
+		ad = answer_dist[i]
+		p = pred[i]
+		for i in range(len(ad)):
+			if ad[i]==1.:
+				rel_index.append(i)
+		for i in range(len(p)):
+			if p[i] in rel_index:
+				MRR+=(1./(i+1))
+				break
+	MRR/=len(answer_dist)
+	print("Mean Reciprocal Rank:", MRR)
+
+	# for i, l in enumerate(pred):
+	# 	num_correct += (answer_dist[i, l] != 0)
+	# for dist in answer_dist:
+	# 	if np.sum(dist) != 0:
+	# 		num_answerable += 1
+	# return num_correct / len(pred), num_answerable / len(pred)
+
+	return MRR
+
+def output_pred_dist(pred_dist, rel_doc_ids, id2entity, start_id, data_loader, f_pred):
 	for i, p_dist in enumerate(pred_dist):
 		data_id = start_id + i
-		l2g = {l:g for g, l in data_loader.global2local_entity_maps[data_id].items()}
-		output_dist = {id2entity[l2g[j]]: float(prob) for j, prob in enumerate(p_dist.data.cpu().numpy()) if j < len(l2g)}
-		answers = [answer['text'] if type(answer['kb_id']) == int else answer['kb_id'] for answer in data_loader.data[data_id]['answers']]
-		f_pred.write(json.dumps({'dist': output_dist, 'answers':answers, 'seeds': data_loader.data[data_id]['entities'], 'tuples': data_loader.data[data_id]['subgraph']['tuples']}) + '\n')
+		# l2g = {l:g for g, l in data_loader.global2local_entity_maps[data_id].items()}
+		output_dist = {rel_doc_ids[i, j]: float(prob) for j, prob in enumerate(p_dist)}
+		answers = [answer['text'] if type(answer['document_id']) == int else answer['document_id'] for answer in data_loader.data[data_id]['answers']]
+		f_pred.write(json.dumps({'dist': dict(sorted(output_dist.items(), key=lambda item: item[1])), 'answers':answers, 'seeds': data_loader.data[data_id]['entities'], 'tuples': data_loader.data[data_id]['subgraph']['tuples']}) + '\n')
 
 class LeftMMFixed(torch.autograd.Function):
 	"""

@@ -1,15 +1,15 @@
-name: 'wikimovie'
-data_folder: 'datasets/wikimovie/10k_train_kb_03/'
-train_data: 'train_try1.json'
+name: 'msmarco_PR'
+data_folder: 'datasets/ms_marco_subset100/'
+train_data: 'SUBSET100train.json'
 train_documents: 'documents.json'
-dev_data: 'dev_try1.json'
+dev_data: 'SUBSET100train.json'
 dev_documents: 'documents.json'
-test_data: 'test_try1.json'
+test_data: 'SUBSET100train.json'
 test_documents: 'documents.json'
 
-word2id: 'vocab.txt'
-relation2id: 'relations.txt'
-entity2id: 'entities.txt'
+word2id: 'SUBSET100vocab.txt'
+relation2id: 'SUBSET100relations.txt'
+entity2id: 'SUBSET100entities_plus_qe.txt'
 word_emb_file: null 
 entity_emb_file: null 
 entity_kge_file: null 
@@ -17,9 +17,9 @@ relation_emb_file: null
 relation_kge_file: null 
 
 to_save_model: True
-save_model_file: "model/repro/wikimovie/testrunmovies2"
-pred_file: "model/repro/wikimovie/predmovies2"
-load_model_file: "model/repro/wikimovie/best_model_hybrid"
+save_model_file: "model/repro/msmarco/subset100docs1265queries_model"
+pred_file: "model/repro/msmarco/subset100docs1265queries_preds"
+load_model_file: null
 
 # graph options
 fact_dropout: 0.0
@@ -38,12 +38,12 @@ fact_scale: 1
 use_inverse_relation: True
 
 # optimization
-num_epoch: 2
+num_epoch: 5
 gradient_clip: 1
 learning_rate: 0.01
 lstm_dropout: 0.3
 linear_dropout: 0.2
 is_debug: False
 
-train_batch_size: 3
-testndev_batch_size: 3
+train_batch_size: 5
+testndev_batch_size: 5

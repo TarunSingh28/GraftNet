@@ -41,6 +41,7 @@ def train(cfg):
     # create model & set parameters
     my_model = get_model(cfg, train_data.num_kb_relation, len(entity2id), len(word2id))
     trainable_parameters = [p for p in my_model.parameters() if p.requires_grad]
+    # print("TRAINABLE ", trainable_parameters)
     optimizer = torch.optim.Adam(trainable_parameters, lr=cfg['learning_rate'])
 
     best_dev_acc = 0.0
@@ -54,7 +55,7 @@ def train(cfg):
             for iteration in tqdm(range(train_data.num_data // cfg['train_batch_size'])):
                 batch, sample_ids = train_data.get_batch(iteration, cfg['train_batch_size'], cfg['fact_dropout'])
 
-                print('sample ids', sample_ids)
+                # print('sample ids', sample_ids)
 
                 # print('---------')
                 # print(type(batch))
@@ -67,26 +68,31 @@ def train(cfg):
                     # print(i, len(train_data.data[i]['passages']))
                     doc_score_original_train.append([x['retrieval_score'] for x in train_data.data[i]['passages']])
 
+
                 # print('--------------')
-                loss, _, _ = my_model(batch, doc_score_original_train)
+                loss, pred, pred_dist, doc_answer_dist = my_model(batch, doc_score_original_train)
                 # pred = pred.data.cpu().numpy()
                 
                 # acc, max_acc = cal_accuracy(pred, batch[-1])
+                acc_mrr = cal_accuracy(pred, doc_answer_dist)
                 train_loss.append(loss.data[0])
-                # train_acc.append(acc)
+                train_acc.append(acc_mrr)
                 # train_max_acc.append(max_acc)
+
                 # back propogate
                 my_model.zero_grad()
                 optimizer.zero_grad()
                 loss.backward()
                 torch.nn.utils.clip_grad_norm(my_model.parameters(), cfg['gradient_clip'])
                 optimizer.step()
+
             print('avg_training_loss', sum(train_loss) / len(train_loss))
             # print('max_training_acc', sum(train_max_acc) / len(train_max_acc))
-            # print('avg_training_acc', sum(train_acc) / len(train_acc))
+            print('avg_training_acc', sum(train_acc) / len(train_acc))
 
             print("validating ...")
-            eval_acc = inference(my_model, valid_data, entity2id, cfg)
+            eval_acc = inference(my_model, valid_data, entity2id, cfg, log_info=True)
+            
             if eval_acc > best_dev_acc and cfg['to_save_model']:
                 print("saving model to", cfg['save_model_file'])
                 torch.save(my_model.state_dict(), cfg['save_model_file'])
@@ -119,6 +125,9 @@ def inference(my_model, valid_data, entity2id, cfg, log_info=False):
         batch, sample_ids = valid_data.get_batch(iteration, testndev_batch_size, fact_dropout=0.0)
 
         sample_ids = sample_ids.tolist()
+        print("SAMPLE IDS")
+        print(sample_ids)
+        # print(valid_data.rel_document_ids[sample_ids])
         # print(sample_ids, batch)
 
         # print(type(sample_ids), sample_ids)
@@ -127,8 +136,9 @@ def inference(my_model, valid_data, entity2id, cfg, log_info=False):
             doc_score_original.append([x['retrieval_score'] for x in valid_data.data[i]['passages']])
         # print(doc_score_original)
         # doc_descending_original.sort(key = lambda x:x['retrieval_score'], reverse=True)
+        # print(doc_score_original)
         
-        loss, pred, pred_dist = my_model(batch, doc_score_original)
+        loss, pred, pred_dist, doc_answer_dist = my_model(batch, doc_score_original)
 
         # doc_score = doc_score.detach().cpu().numpy()
         # doc_indexes_score_wise = valid_data.rel_document_ids
@@ -138,20 +148,21 @@ def inference(my_model, valid_data, entity2id, cfg, log_info=False):
         # print(doc_ranking_original)
         # print(doc_id_sorted)
 
-        pred = pred.data.cpu().numpy()
-        acc, max_acc = cal_accuracy(pred, batch[-1])
-
+        # pred = pred.data.cpu().numpy()
+        # acc, max_acc = cal_accuracy(pred, batch[-1])
+        acc_mrr = cal_accuracy(pred, doc_answer_dist)
+        
         if log_info: 
-            output_pred_dist(pred_dist, batch[-1], id2entity, iteration * testndev_batch_size, valid_data, f_pred)
+            output_pred_dist(pred_dist, valid_data.rel_document_ids[sample_ids], id2entity, iteration * testndev_batch_size, valid_data, f_pred)
         
         eval_loss.append(loss.data[0])
-        eval_acc.append(acc)
-        eval_max_acc.append(max_acc)
+        eval_acc.append(acc_mrr)
+        # eval_max_acc.append(max_acc)
 
     if eval_loss:
         print('avg_loss', sum(eval_loss) / len(eval_loss))
-    if eval_max_acc:
-        print('max_acc', sum(eval_max_acc) / len(eval_max_acc))
+    # if eval_max_acc:
+    #     print('max_acc', sum(eval_max_acc) / len(eval_max_acc))
     if eval_acc:
         print('avg_acc', sum(eval_acc) / len(eval_acc))
 
