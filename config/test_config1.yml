@@ -45,5 +45,5 @@ lstm_dropout: 0.3
 linear_dropout: 0.2
 is_debug: False
 
-train_batch_size: 5
-testndev_batch_size: 5
+train_batch_size: 6
+testndev_batch_size: 6
