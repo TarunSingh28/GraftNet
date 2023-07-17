@@ -52,28 +52,23 @@ def train(cfg):
             # Train
             my_model.train()
             train_loss, train_acc, train_max_acc = [], [], []
-            for iteration in tqdm(range(train_data.num_data // cfg['train_batch_size'])):
+            for iteration in tqdm(range((train_data.num_data // cfg['train_batch_size'])+1)):
+                
                 batch, sample_ids = train_data.get_batch(iteration, cfg['train_batch_size'], cfg['fact_dropout'])
 
-                # print('sample ids', sample_ids)
+                if len(sample_ids)==0:
+                    continue
 
-                # print('---------')
-                # print(type(batch))
-                # print(len(batch))
                 sample_ids = sample_ids.tolist()
-                # print(type(sample_ids), len(sample_ids))
 
                 doc_score_original_train = []
                 for i in sample_ids:
-                    # print(i, len(train_data.data[i]['passages']))
                     doc_score_original_train.append([x['retrieval_score'] for x in train_data.data[i]['passages']])
 
 
-                # print('--------------')
                 loss, pred, pred_dist, doc_answer_dist = my_model(batch, doc_score_original_train)
                 # pred = pred.data.cpu().numpy()
                 
-                # acc, max_acc = cal_accuracy(pred, batch[-1])
                 acc_mrr = cal_accuracy(pred, doc_answer_dist)
                 train_loss.append(loss.data[0])
                 train_acc.append(acc_mrr)
@@ -92,7 +87,7 @@ def train(cfg):
 
             print("validating ...")
             eval_acc = inference(my_model, valid_data, entity2id, cfg, log_info=True)
-            
+
             if eval_acc > best_dev_acc and cfg['to_save_model']:
                 print("saving model to", cfg['save_model_file'])
                 torch.save(my_model.state_dict(), cfg['save_model_file'])
@@ -121,22 +116,18 @@ def inference(my_model, valid_data, entity2id, cfg, log_info=False):
 
     if log_info:
         f_pred = open(cfg['pred_file'], 'w')
-    for iteration in tqdm(range(valid_data.num_data // testndev_batch_size)):
+    for iteration in tqdm(range((valid_data.num_data // testndev_batch_size)+1)):
         batch, sample_ids = valid_data.get_batch(iteration, testndev_batch_size, fact_dropout=0.0)
 
         sample_ids = sample_ids.tolist()
-        print("SAMPLE IDS")
-        print(sample_ids)
-        # print(valid_data.rel_document_ids[sample_ids])
-        # print(sample_ids, batch)
 
-        # print(type(sample_ids), sample_ids)
+        if len(sample_ids)==0:
+            continue
+
         doc_score_original = []
         for i in sample_ids:
             doc_score_original.append([x['retrieval_score'] for x in valid_data.data[i]['passages']])
-        # print(doc_score_original)
         # doc_descending_original.sort(key = lambda x:x['retrieval_score'], reverse=True)
-        # print(doc_score_original)
         
         loss, pred, pred_dist, doc_answer_dist = my_model(batch, doc_score_original)
 
@@ -144,9 +135,6 @@ def inference(my_model, valid_data, entity2id, cfg, log_info=False):
         # doc_indexes_score_wise = valid_data.rel_document_ids
         # doc_index_score = sorted(set(zip(doc_indexes_score_wise[0], doc_score[0])), key=lambda x:x[1], reverse=True)
         # doc_id_sorted = [x for x,_ in doc_index_score]
-
-        # print(doc_ranking_original)
-        # print(doc_id_sorted)
 
         # pred = pred.data.cpu().numpy()
         # acc, max_acc = cal_accuracy(pred, batch[-1])
@@ -177,20 +165,7 @@ def test(cfg):
     test_document_entity_indices, test_document_texts = index_document_entities(test_documents, word2id, entity2id, cfg['max_document_word'])
     test_data = DataLoader(cfg['data_folder'] + cfg['test_data'], test_documents, test_document_entity_indices, test_document_texts, word2id, relation2id, entity2id, cfg['max_query_word'], cfg['max_document_word'], cfg['use_kb'], cfg['use_doc'], cfg['use_inverse_relation'])
 
-    # print(test_data)
-    # with open(r'/home/tarun/ResearchWork/GraftNet/manually_created_files/read_test_try1_check', 'wb') as file1:
-    #     pickle.dump(test_data, file1)
-    
-    # print("TESTDATA", type(test_data))
-    # print(test_data.num_data, test_data.num_kb_relation)
-    
     my_model = get_model(cfg, test_data.num_kb_relation, len(entity2id), len(word2id))
-
-    # print(my_model)
-    # print(type(my_model))
-
-    # with open(r'/home/tarun/ResearchWork/GraftNet/manually_created_files/', 'wb') as file1:
-    #     pickle.dump(test_data, file1)
 
     test_acc = inference(my_model, test_data, entity2id, cfg, log_info=True)
     return test_acc

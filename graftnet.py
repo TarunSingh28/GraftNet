@@ -296,40 +296,17 @@ class GraftNet(nn.Module):
             # update entity
             local_entity_emb = self.relu(e2e_linear(self.linear_drop(next_local_entity_emb))) # batch_size, max_local_entity, entity_dim
 
-        # torch.save(local_entity_emb, 'final_embs.pt')
-        # print(local_entity_emb)
-
-        # torch.save(document_textual_emb, 'final_embs_docs.pt')
-        # torch.save(document_node_emb, 'final_embs_docs_nodes.pt')
-        # print(local_entity_emb)
 
         # calculate loss and make prediction
-
-        # print('---------------')
-        # print(len(query_node_emb[0][0]))
-        # print(len(document_node_emb[0][0]))
-        # print('-----------------')
-
-        
 
         score = self.score_func(self.linear_drop(local_entity_emb)).squeeze(dim=2) # batch_size, max_local_entity
 
         # doc_score = self.score_func(self.linear_drop(document_node_emb)).squeeze(dim=2)
 
-        # print(score.shape)
-        # print(query_node_emb.shape)
-        # print(query_node_emb[0][0])
-        # print(document_node_emb[0])
-        # print(document_textual_emb.shape)
-
         qne_normalized = F.normalize(query_node_emb.float(), p=2, dim=2)
         dne_normalized = F.normalize(document_node_emb.float(), p=2, dim=2)
         # print(qne_normalized.shape, document_node_emb.shape)
         score2 = F.cosine_similarity(qne_normalized, dne_normalized, dim=2)
-        # print(score2.shape)
-
-
-        # print(doc_score)
 
         doc_score_original_np = np.zeros([len(doc_score_original),len(max(doc_score_original,key = lambda x: len(x)))], dtype='float32')
         for i,j in enumerate(doc_score_original):
@@ -346,20 +323,10 @@ class GraftNet(nn.Module):
         # doc_index_score = sorted(set(zip(doc_indexes_score_wise[0], doc_score[0])), key=lambda x:x[1], reverse=True)
         # doc_id_sorted = [x for x,_ in doc_index_score]
 
-        # print(doc_score)
-        # print(doc_score_original)
-        # print(type(doc_score), type(doc_score_original))
-        # print(doc_score.size(), doc_score_original.size())
-
-        # print(doc_ranking_original)
-        # print(doc_id_sorted)
-
         # loss = self.bce_loss_logits(score, answer_dist)
         loss = self.MSEloss(score2, doc_score_original)
-        # print(loss)
 
         # score = score + (1 - local_entity_mask) * VERY_NEG_NUMBER
-
         # pred_dist = self.sigmoid(score) * local_entity_mask
         # pred = torch.max(score, dim=1)[1]
 
@@ -367,14 +334,6 @@ class GraftNet(nn.Module):
         
         # pred = torch.max(score2, dim=1)
         _, pred = torch.topk(score2, k=20, dim=1)
-        
-
-        # print('------->>')
-        # print(score2, doc_score_original)
-        # print(pred_dist)
-        # print(pred)
-        # print(score2)
-        # print('-------------------->')
 
         # return loss, pred, pred_dist, doc_score_original
         return loss, pred, score2, doc_score_original
